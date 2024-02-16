@@ -120,7 +120,7 @@ function HttpAdvancedAccessory(log, config) {
 			const parsedURL = new URL(config.urls[actionName].url);
 			if (parsedURL.hostname.endsWith('.local')) {
 				// Make sure we only store the hostname once
-				if (!this.mDNSHostnames.includes(parsedURL.hostname))
+				if (!this.mDNSHostnames.includes(parsedURL.hostname)) {
 					this.mDNSHostnames.push(parsedURL.hostname);
 				}
 			}
@@ -142,7 +142,7 @@ function HttpAdvancedAccessory(log, config) {
 	function queryMDNS() {
 		const questions = self.mDNSHostnames.map(hostname => ({ name: hostname, type: 'A' }));
 		mdns.query(questions);
-	}
+	};
 
 	queryMDNS();
 
