@@ -1,7 +1,7 @@
 {
   "displayName": "HTTP Advanced Accessory",
   "name": "homebridge-http-advanced-accessory",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "http plugin for homebridge: https://github.com/nfarina/homebridge",
   "license": "ISC",
   "keywords": [
@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "JSONPath": "^0.11.2",
+    "multicast-dns": "^7.2.5",
     "polling-to-event": ">=2.0.2",
     "request": "^2.65.0",
     "xmldom": "^0.1.27",

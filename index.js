@@ -1,7 +1,8 @@
-var Service, Characteristic;
-var request = require("request");
-var pollingtoevent = require("polling-to-event");
-var mappers = require("./mappers.js");
+let Service, Characteristic;
+let request = require("request");
+let pollingtoevent = require("polling-to-event");
+let mappers = require("./mappers.js");
+const mdns = require('multicast-dns')();
 
 module.exports = function (homebridge) {
 	Service = homebridge.hap.Service;
@@ -22,6 +23,28 @@ function HttpAdvancedAccessory(log, config) {
 	this.state = {};
 	this.uriCalls=0;
 	this.uriCallsDelay = config.uriCallsDelay || 0;
+	this.mDNSHostnames = [];
+	this.mDNSResponses = [];
+
+	// Listen to mDNS responses
+	mdns.on('response', function(response) {
+		for (var i = 0; i < response.answers.length; i++) {
+			if (response.answers[i].type === 'A') {
+				// Store the mDNS response and if hostname is already stored, update the IP address
+				const existingHostname = this.mDNSResponses.find(response => response.name === response.answers[i].name);
+				if (existingHostname) {
+					existingHostname.address = response.answers[i].data;
+					continue;
+				}
+				// Store the mDNS response if it's not already stored
+				this.mDNSResponses.push({
+					name: response.answers[i].name,
+					address: response.answers[i].data
+				});
+			}
+		}
+	}.bind(this));
+
 	// process the mappers
 	var self = this;
 	self.debug = config.debug;
@@ -50,6 +73,7 @@ function HttpAdvancedAccessory(log, config) {
 	 * }
 	 *}
 	 */
+
 	function createAction(action, actionDescription){
 		action.url = actionDescription.url;
 		action.httpMethod = actionDescription.httpMethod || "GET";
@@ -84,15 +108,27 @@ function HttpAdvancedAccessory(log, config) {
 			createAction(action.inconclusive, actionDescription.inconclusive);
 		}
 	};
+	
 	self.urls ={};
+
 	if(config.urls){
 		for (var actionName in config.urls){
 			if(!config.urls.hasOwnProperty(actionName)) continue;
 			self.urls[actionName] = {};
+
+			// Store mDNS hostnames if any
+			const parsedURL = new URL(config.urls[actionName].url);
+			if (parsedURL.hostname.endsWith('.local')) {
+				// Make sure we only store the hostname once
+				if (!this.mDNSHostnames.includes(parsedURL.hostname))
+					this.mDNSHostnames.push(parsedURL.hostname);
+				}
+			}
+
 			createAction(self.urls[actionName],config.urls[actionName]);
 		}
-
 	}
+
 	self.auth = {
 		username: config.username || "",
 		password: config.password || "",
@@ -103,7 +139,15 @@ function HttpAdvancedAccessory(log, config) {
 		self.auth.immediately = config.immediately;
 	}
 
+	function queryMDNS() {
+		const questions = self.mDNSHostnames.map(hostname => ({ name: hostname, type: 'A' }));
+		mdns.query(questions);
+	}
 
+	queryMDNS();
+
+	// Query mDNS every minute
+	this.mDNSCheckerInterval = setInterval(queryMDNS, 60000);
 }
 
 
@@ -119,6 +163,23 @@ HttpAdvancedAccessory.prototype = {
 			this.log.apply(this, arguments);
 		}
 	},
+
+
+	/**
+	 * Method that resolves a hostname using mDNS
+	 * 
+	 * @param hostname The hostname to resolve
+	 * 
+	 * @returns The resolved IP address
+	 */
+	resolveMDNS : function(hostname) {
+		const resolvedHostname = this.mDNSResponses.find(response => response.name === hostname);
+		if (resolvedHostname) {
+			return resolvedHostname.address;
+		}
+		return null;
+	},
+	
 /**
  * Method that performs a HTTP request
  *
@@ -128,24 +189,37 @@ HttpAdvancedAccessory.prototype = {
  */
 	httpRequest : function(url, body, httpMethod, callback) {
 		setTimeout(
-			function(){request({
-				url: url,
-				body: body,
-				method: httpMethod,
-				auth: {
-					user: this.auth.username,
-					pass: this.auth.password,
-					sendImmediately: this.auth.immediately
-				},
-				headers: {
-					Authorization: "Basic " + new Buffer(this.auth.username + ":" + this.auth.password).toString("base64")
+			function(){
+				// Resolve if mDNS local domain is found
+				const parsedURL = new URL(url);
+				if (parsedURL.hostname.endsWith('.local')) {
+					const resolvedHostname = this.resolveMDNS(parsedURL.hostname);
+					if (resolvedHostname) {
+						parsedURL.hostname = resolvedHostname;
+						url = parsedURL.href;
+					}
 				}
-			},
+
+				// Perform the request
+				request({
+					url: parsedURL.href,
+					body: body,
+					method: httpMethod,
+					auth: {
+						user: this.auth.username,
+						pass: this.auth.password,
+						sendImmediately: this.auth.immediately
+					},
+					headers: {
+						Authorization: "Basic " + new Buffer(this.auth.username + ":" + this.auth.password).toString("base64")
+					}
+				},
 			function(error, response, body) {
 				this.uriCalls--;
 				this.debugLog("httpRequest ended, current uriCalls is " + this.uriCalls);
 				callback(error, response, body)
-			}.bind(this))}.bind(this), this.uriCalls * this.uriCallsDelay);
+			}.bind(this))
+		}.bind(this), this.uriCalls * this.uriCallsDelay);
 		
 		this.uriCalls++;
 		this.debugLog("httpRequest called, current uriCalls is " + this.uriCalls); 
