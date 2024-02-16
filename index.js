@@ -196,7 +196,6 @@ HttpAdvancedAccessory.prototype = {
 					const resolvedHostname = this.resolveMDNS(parsedURL.hostname);
 					if (resolvedHostname) {
 						parsedURL.hostname = resolvedHostname;
-						url = parsedURL.href;
 					}
 				}
 
