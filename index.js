@@ -31,7 +31,7 @@ function HttpAdvancedAccessory(log, config) {
 		for (var i = 0; i < response.answers.length; i++) {
 			if (response.answers[i].type === 'A') {
 				// Store the mDNS response and if hostname is already stored, update the IP address
-				const existingHostname = this.mDNSResponses.find(response => response.name === response.answers[i].name);
+				const existingHostname = this.mDNSResponses.find(r => r.name === response.answers[i].name);
 				if (existingHostname) {
 					existingHostname.address = response.answers[i].data;
 					continue;
